@@ -171,13 +171,11 @@ namespace tcp
       : tcp::connection(port_)
     {
       init_connection(port_, ipaddr_);
-      fprintf(stderr, "server created.\n");
     }
 
     ~server()
     {
       close_socket();
-      fprintf(stderr, "server closed.\n");
     }
 
     void
@@ -292,13 +290,11 @@ namespace tcp
       : tcp::connection(port_)
     {
       init_connection(port_, ipaddr_);
-      fprintf(stderr, "client created.\n");
     }
 
     ~client()
     {
       close_socket();
-      fprintf(stderr, "client closed.\n");
     }
 
     /**
