@@ -46,4 +46,4 @@ c.read(read_buf, 80);
 ~~~
 
 ## License
-This is licensed under GPLv2.
+The codes in this repository are licensed under the [MIT License](https://opensource.org/licenses/mit-license.php).
