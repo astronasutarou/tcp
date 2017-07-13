@@ -102,7 +102,7 @@ namespace tcp
 
     /**
      * @brief @c port に @c buf の先頭から @c n bytes のデータを書き込む
-     * @param buf 書き込むためのデータ保持しているバッファ
+     * @param data 書き込むためのデータ保持しているバッファ
      * @param n 書き込むデータの容量 (byte)
      * @return 実際に書き込んだデータの容量 (byte)
      */
