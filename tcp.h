@@ -1,29 +1,31 @@
 /**
  * @file tcp.h
- * @brief TCP を利用してデータ通信をおこなうためのクラスを提供する
+ * @brief Providing classis to communicate with sockets
  * @author Ryou OHSAWA
  * @date 2015
  *
- * TCP プロトコルを使用してデータ通信をおこなうためのクラスを提供する．
+ * This header provides classes for transactions in the TCP protocol.
  *
- * このヘッダでは以下のクラスを提供する:
- * - tcp_receiver: TCP プロトコルでデータを受信する
- * - tcp_transmitter: TCP プロトコルでデータを送信する
- * - udp_receiver: UDP プロトコルでデータを受信する
- * - udp_transmitter: UDP プロトコルでデータを送信する
+ * The following classes are provided in this file:
+ * - server: host a server in the TCP protocol.
+ * - client: communicate with a server in the TCP protocol.
  *
- * コンストラクタでは基本的に IP アドレスを string で port を int で指定する．
- * レシーバは read(buf, N) という関数でデータを受信する．ここで buf は読みだした
- * データを保存するための領域であり N は読みだすデータの最大容量である．
- * トランスミッタは write(data, N) という関数でデータを送信する．ここで data は
- * 送信するためのデータを保持するバッファであり N は送信するデータ数である．
+ * An IP address and a port number are given in a string and an integer.
+ *
+ * Reciever classes use a function `read(buf, N)` for getting data, where
+ * `buf` is a buffer to store data and `N` is the maximum number of data
+ * to be read in units of bytes. Transmitters use a function `send(data, N)`
+ * for submitting data, where `data` contains data to be submitted and `N`
+ * is the number of data submitted in units of bytes.
  */
-#ifndef H_CONNECTION_TCP
-#define H_CONNECTION_TCP
+#ifndef __H_CONNECTION_TCP
+#define __H_CONNECTION_TCP
 
 #include <vector>
+#include <string>
 #include <cstdio>
 #include <cstdlib>
+#include <cstdint>
 #include <cstring>
 #include <unistd.h>
 #include <fcntl.h>
@@ -35,193 +37,256 @@
 
 
 /**
- * @brief ネットワーク越しにデータ通信するためのクラス
+ * @brief Defining classes for communication in the TCP protocol.
  */
 namespace tcp
 {
-  /** @brief 書き込みに使用するデフォルトのバッファサイズ */
+  /** A default buffer size in bytes */
   constexpr size_t BUFSIZE = 2880;
 
   /**
-   * @brief TCP 通信の基本的な機能を実装した基底クラス
-   * @note このクラスは基本的な関数だけを規定する virtual なクラス
+   * @brief Defining the status of connections.
+   */
+  enum tcp_status {
+    INITIALIZED = 0x0000,    /**< @brief Initialized */
+    INIT_AS_SERVER = 0x0001, /**< @brief Initialized as a server */
+    INIT_AS_CLIENT = 0x0002, /**< @brief Initialized as a client */
+    OPEN_SOCKET = 0x0010,    /**< @brief A sockfd is opened */
+    OPEN_SERVER = 0x0020,    /**< @brief A serverfd is opened */
+    LISTENING   = 0x0200,    /**< @brief A server is now listening */
+    CONNECTED   = 0x1000,    /**< @brief Connection established */
+  };
+
+
+  /**
+   * @brief A base class for TCP communication.
+   * @note This is a virtual class.
    */
   class connection
   {
   public:
     /**
-     * @brief ポート番号 @c port_ との通信を開始する
-     * @param port_ ポート番号
+     * @brief Create an instance with `_port` and `_ipaddr`.
+     * @param[in] _port A port number.
+     * @param[in] _ipaddr An IP address.
      */
-    connection(const int port_)
-      : port(port_), status(INITIALIZED) {}
-    ~connection() {}
-
-    /** @brief 現在のポート番号を取得する */
-    const int
-    get_port() const
-    { return port; }
-
-    /**
-     * @brief 現在の通信ソケットのディスクリプタを取得する
-     */
-    const int
-    get_socket() const
-    { return sockfd; }
-
-    /**
-     * @brief @c port から @c buf に @c n bytes のデータを読み込む
-     * @param buf データを保存するためのバッファ
-     * @param n 読み込むデータの容量 (byte)
-     * @return 実際に読み込んだデータの容量 (byte)
-     */
-    const int
-    read(void* buf, const int n)
+    connection(const int32_t _port, const char* _ipaddr)
     {
-      if ((status & CONNECTED) == 0) {
+      port   = _port;
+      ipaddr = (_ipaddr==NULL)?"127.0.0.1":std::string(_ipaddr);
+      status = tcp_status::INITIALIZED;
+    }
+
+    ~connection() {
+      close_sockfd();
+      close_serverfd();
+    }
+
+    /**
+     * @brief Return the current port number.
+     * @return The current port number.
+     */
+    const int32_t
+    get_port() const {
+      return port;
+    }
+
+    /**
+     * @brief Return the current socket descriptor.
+     * @return The current socket descriptor.
+     * @note `-1` returned if the socket is not opened.
+     */
+    const int32_t
+    get_socket() const {
+      if (status&tcp_status::OPEN_SOCKET) return sockfd;
+      return -1;
+    }
+
+    /**
+     * @brief Return the current server socket descriptor.
+     * @return The current server socket descriptor.
+     * @note `-1` returned if the server is not opened.
+     */
+    const int32_t
+    get_server_socket() const {
+      if (status&tcp_status::OPEN_SOCKET) return serverfd;
+      return -1;
+    }
+
+    /**
+     * @brief Recieve data.
+     * @param[in] buf A buffer to store data.
+     * @param[in] n The size of data to be read in bytes.
+     * @return The size of data acutually read in bytes.
+     */
+    template <class T>
+    const int32_t read(T* buf, const int32_t n)
+    {
+      return read((void*)buf, n);
+    }
+    /**
+     * @brief Recieve data.
+     * @param[in] buf A buffer to store data.
+     * @param[in] n The size of data to be read in bytes.
+     * @return The size of data acutually read in bytes.
+     */
+    const int32_t
+    read(void* buf, const int32_t n)
+    {
+      if ((status & tcp_status::CONNECTED) == 0) {
         fprintf(stderr, "error: not connected yet.\n");
-        exit(1);
+        return -1;
       }
-      int &&num = ::read(sockfd, buf, n);
+      int32_t &&num = ::read(sockfd, buf, n);
       return num;
     };
-    template <class T>
-    const int
-    read(T* buf, const int n)
-    { return read((void*)buf, n); }
 
+    /**
+     * @brief Recieve data in the non-blocking mode.
+     * @param[in] buf A buffer to store data.
+     * @param[in] n The size of data to be read in bytes.
+     * @return The size of data acutually read in bytes.
+     * @note Immediately return if there is no data in the IO buffer.
+     */
     template <class T>
-    const int
-    partial_read(T* buf, const int n)
+    const int32_t
+    partial_read(T* buf, const int32_t n)
     {
       set_nonblock();
-      int &&num = read((void*)buf,n);
+      int32_t &&num = read((void*)buf,n);
       unset_nonblock();
       return num;
     }
 
     /**
-     * @brief @c port に @c buf の先頭から @c n bytes のデータを書き込む
-     * @param data 書き込むためのデータ保持しているバッファ
-     * @param n 書き込むデータの容量 (byte)
-     * @return 実際に書き込んだデータの容量 (byte)
+     * @brief Submit data.
+     * @param[out] data A buffer to sotre data to be submitted.
+     * @param[in] n The size of data in bytes.
+     * @return The size of data acutually submitted.
      */
-    const int
-    write(const void* data, const int n)
+    template <class T>
+    const int32_t
+    write(const T* data, const int32_t n)
     {
-      if ((status & CONNECTED) == 0) {
+      return write((const void*)data, n);
+    }
+    /**
+     * @brief Submit data.
+     * @param[out] data A buffer to sotre data to be submitted.
+     * @param[in] n The size of data in bytes.
+     * @return The size of data acutually submitted.
+     */
+    const int32_t
+    write(const void* data, const int32_t n)
+    {
+      if ((status & tcp_status::CONNECTED) == 0) {
         fprintf(stderr, "error: not connected yet.\n");
-        exit(1);
+        return -1;
       }
-      int &&num = ::write(sockfd, data, n);
+      int32_t &&num = ::write(sockfd, data, n);
       return num;
     }
-    template <class T>
-    const int
-    write(const T* data, const int n)
-    { return write((const void*)data, n); }
 
+    /**
+     * @brief Close a connection.
+     * @return Zero if successful. `-1` if connection is not established.
+     */
+    int32_t
+    close()
+    {
+      if (status&tcp_status::CONNECTED) {
+        close_sockfd();
+        return 0;
+      } else {
+        return -1;
+      }
+    }
+
+    /**
+     * @brief Enable the non-blocking mode.
+     */
     void
     set_nonblock()
     {
-      int flag = fcntl(sockfd, F_GETFL, 0);
+      int32_t flag = fcntl(sockfd, F_GETFL, 0);
       fcntl(sockfd, F_SETFL, flag |= O_NONBLOCK);
     }
 
+    /**
+     * @brief Disable the non-blocking mode.
+     */
     void
     unset_nonblock()
     {
-      int flag = fcntl(sockfd, F_GETFL, 0);
+      int32_t flag = fcntl(sockfd, F_GETFL, 0);
       fcntl(sockfd, F_SETFL, flag &= ~O_NONBLOCK);
     }
 
   protected:
-    /** @brief 通信を担当するソケットのディスクリプタ */
-    int sockfd;
-    /** @brief ポート番号 */
-    int port;
-    /** @brief クラスの状態を保存する変数 */
-    uint status;
-    /** @brief クラスの状態を表現する列挙型 */
-    enum {
-      INITIALIZED = 0x00, /**< @brief 初期化された */
-      INIT_SOCKET = 0x01, /**< @brief sockfd が初期化された */
-      INIT_SERVER = 0x02, /**< @brief serverfd が初期化された */
-      LISTENING   = 0x04, /**< @brief listen 状態 (server) */
-      CONNECTED   = 0x08, /**< @brief 接続に成功した */
-    };
+    int32_t sockfd;     /**< A socket for communication */
+    int32_t serverfd;   /**< A socket to host a server */
+    int32_t port;       /**< A port number */
+    std::string ipaddr; /**< An IP address */
+    uint32_t status;    /**< Store the status of the instance */
+
+    /** Close `sockfd` when the socket is opened. */
+    void
+    close_sockfd()
+    {
+      if (status & tcp_status::OPEN_SOCKET) ::close(sockfd);
+      status |= ~tcp_status::OPEN_SOCKET;
+    }
+
+    /** Close `serverfd` when opened. */
+    void
+    close_serverfd()
+    {
+      if (status & tcp_status::OPEN_SERVER) ::close(serverfd);
+      status |= ~tcp_status::OPEN_SERVER;
+    }
   private:
   };
 
 
   /**
-   * @brief サーバとして機能するクラス提供する
+   * @brief A class to host a TCP server.
    */
   class server
     : public tcp::connection
   {
   public:
     /**
-     * @brief TCP プロトコルでサーバとして機能する
-     * @param port_ 通信するポート番号
-     * @param ipaddr_ 接続を許可するクライアントの IP アドレス
-     * @note ipaddr_ が NULL の場合には IP アドレスに制限を加えない
+     * @brief Create a server instance with `_port` and `_ipaddr`.
+     * @param[in] _port A port number to be opened.
+     * @param[in] _ipaddr A network to host a server.
+     * @note `127.0.0.1` is set if `_ipaddr` is not specified.
+     * When a blank `_ipaddr` is given, `INADDR_ANY` is set.
      */
-    server(const int port_, const char* ipaddr_ = NULL)
-      : tcp::connection(port_)
-    {
-      init_connection(port_, ipaddr_);
-    }
+    server(const int32_t _port, const char* _ipaddr = NULL)
+      : tcp::connection(_port, _ipaddr)
+    { init_server(); }
 
-    ~server()
-    {
-      close_socket();
-    }
-
-    void
-    init_connection(const int port_, const char* ipaddr_ = NULL)
-    {
-      init_socket();
-      server_addr.sin_family = AF_INET;
-      server_addr.sin_port = htons(port);
-      if (ipaddr_ == NULL) {
-        server_addr.sin_addr.s_addr = INADDR_ANY;
-      } else {
-        server_addr.sin_addr.s_addr = inet_addr(ipaddr_);
-      }
-
-      /*
-       * 一度接続に成功すると一定時間 port が専有される．
-       * SO_REUSEADDR というオプションを有効にすることで port が使われていても
-       * 上書きして port に bind することができる．
-       */
-      const int one = 1;
-      setsockopt(serverfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(int));
-
-      int &&st =
-        bind(serverfd, (struct sockaddr*)&server_addr, sizeof(server_addr));
-      if (st != 0) {
-        fprintf(stderr, "error: bind: %d\n", st);
-        perror("bind");
-        exit(1);
-      }
-    }
-
-    /** @brief TCP 接続を受け付ける状態に入る */
+    /**
+     * @brief Start listening to a TCP connection from clients.
+     * @note A flag tcp::tcp_status::LISTENING is turned on.
+     */
     void
     listen()
     {
-      int &&st = ::listen(serverfd, 50);
+      int32_t &&st = ::listen(serverfd, 50);
       if (st != 0) {
         fprintf(stderr, "error: listen: %d\n", st);
         perror("listen");
         exit(1);
       }
-      /* status に LISTENING フラグを追加 */
-      status |= LISTENING;
+      status |= tcp_status::LISTENING;
     }
 
-    /** @brief クライアントからの TCP 接続を受理する */
+    /**
+     * @brief Accept a TCP connection from a client.
+     * @note A flag tcp::tcp_status::OPEN_SOCKET is turned on.
+     * @note A flag tcp::tcp_status::CONNECTED is turned on.
+     */
     void
     accept()
     {
@@ -232,111 +297,117 @@ namespace tcp
         perror("accept");
         exit(1);
       }
-      /* status に INIT_SOCKET フラグを追加 */
-      status |= INIT_SOCKET;
-      /* status に CONNECTED フラグを追加 */
-      status |= CONNECTED;
+      status |= tcp_status::OPEN_SOCKET;
+      status |= tcp_status::CONNECTED;
     }
 
   private:
-    /** @brief サーバとしての socket */
-    int serverfd;
-    /** @brief 自身の情報を保存する構造体 */
-    struct sockaddr_in server_addr;
-    /** @brief 接続先クライアントの情報を受け取る構造体 */
-    struct sockaddr_in client_addr;
-    /** @brief client_addr の長さを受け取るための変数 */
-    socklen_t len;
+    struct sockaddr_in server_addr; /**< store server information */
+    struct sockaddr_in client_addr; /**< store client information */
+    socklen_t len; /**< store the length of a client_addr */
 
+    /**
+     * @brief Initialize the intance as a TCP server.
+     * @param[in] _port A port number to be opened.
+     * @param[in] _ipaddr A network to host a server.
+     * @note A flag tcp::tcp_status::INIT_AS_SERVER is turned on.
+     * @note A flag tcp::tcp_status::OPEN_SERVER is turned on.
+     */
     void
-    init_socket()
+    init_server()
     {
-      close_socket();
+      close_serverfd();
       serverfd = socket(AF_INET, SOCK_STREAM, 0);
       if (serverfd < 0) {
         fprintf(stderr, "error: socket: %d\n", serverfd);
         perror("socket");
         exit(1);
       }
-      /* status を強制的に INIT_SERVER に変更 */
-      status = INIT_SERVER;
-    }
-    void
-    close_socket()
-    {
-      /* INIT_SOCKET フラグで sockfd の状態を調べる */
-      if ((status & INIT_SOCKET) != 0) close(sockfd);
-      /* INIT_SERVER フラグで serverfd の状態を調べる */
-      if ((status & INIT_SERVER) != 0) close(serverfd);
-      /* status を強制的に初期状態に変更 */
-      status = INITIALIZED;
+      server_addr.sin_family = AF_INET;
+      server_addr.sin_port = htons(port);
+      if (ipaddr == "") {
+        server_addr.sin_addr.s_addr = INADDR_ANY;
+      } else {
+        server_addr.sin_addr.s_addr = inet_addr(ipaddr.c_str());
+      }
+
+      /*
+       * A port number is occupied for a while after a connection is
+       * established. If `SO_REUSEADDR` option is enabled, we can bind
+       * a port which is already used in previous connections.
+       */
+      const int32_t one = 1;
+      setsockopt(serverfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(int32_t));
+
+      int32_t &&st =
+        bind(serverfd, (struct sockaddr*)&server_addr, sizeof(server_addr));
+      if (st != 0) {
+        fprintf(stderr, "error: bind: %d\n", st);
+        perror("bind");
+        exit(1);
+      }
+
+      status |= tcp_status::INIT_AS_SERVER;
+      status |= tcp_status::OPEN_SERVER;
     }
   };
 
 
   /**
-   * @brief クライアントとして機能するクラスを提供する
+   * @brief A class to communicate with a server as a client.
    */
   class client
     : public tcp::connection
   {
   public:
     /**
-     * @brief TCP プロトコルでサーバに接続する
-     * @param port_ 接続先ポート番号
-     * @param ipaddr_ 接続するサーバの IP アドレス
+     * @brief Create a client instance to a server with `_port` and `_ipaddr`.
+     * @param _port A port number of the server.
+     * @param _ipaddr An IP address of the server.
      */
-    client(const int port_, const char* ipaddr_)
-      : tcp::connection(port_)
+    client(const int32_t _port, const char* _ipaddr)
+      : tcp::connection(_port, _ipaddr)
     {
-      init_connection(port_, ipaddr_);
-    }
-
-    ~client()
-    {
-      close_socket();
+      init_connection();
     }
 
     /**
-     * @brief 接続先サーバを設定する
-     * @param port_ 接続先ポート番号
-     * @param ipaddr_ 接続するサーバの IP アドレス
-     */
-    void
-    init_connection(const int port_, const char* ipaddr_)
-    {
-      init_socket();
-      server_addr.sin_family = AF_INET;
-      server_addr.sin_port = htons(port);
-      server_addr.sin_addr.s_addr = inet_addr(ipaddr_);
-    }
-
-    /**
-     * @brief サーバとの通信を開始する
+     * @brief Establish a connection with the server.
+     * @note A flag tcp::tcp_status::CONNECTED is turned on.
      */
     void
     connect()
     {
-      int &&st =
-        ::connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr));
+      int32_t &&st =
+        ::connect(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr));
       if (st != 0) {
         fprintf(stderr, "error: connect: %d\n", st);
         perror("connect");
         exit(1);
       }
-      /* status に CONNECTED フラグを追加 */
-      status |= CONNECTED;
+      status |= tcp_status::CONNECTED;
     }
 
   private:
-    /** @brief 接続先サーバの情報を保存する構造体 */
-    struct sockaddr_in server_addr;
+    struct sockaddr_in server_addr; /**< Store server information */
 
-    /** @brief socket を初期化する */
+    /**
+     * @brief Configure a connection
+     * @note A flat tcp::tcp_status::OPEN_SOCKET is turned on.
+     */
     void
-    init_socket()
+    init_connection()
     {
-      close_socket();
+      close_sockfd();
+
+      /*
+       * A port number is occupied for a while after a connection is
+       * established. If `SO_REUSEADDR` option is enabled, we can bind
+       * a port which is already used in previous connections.
+       */
+      const int32_t one = 1;
+      setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(int32_t));
+
       sockfd = socket(AF_INET, SOCK_STREAM, 0);
       if (sockfd < 0) {
         fprintf(stderr, "error: socket: %d\n", sockfd);
@@ -344,28 +415,13 @@ namespace tcp
         exit(1);
       }
 
-      /*
-       * 一度接続に成功すると一定時間 port が専有される．
-       * SO_REUSEADDR というオプションを有効にすることで port が使われていても
-       * 上書きして port に bind することができる．
-       */
-      const int one = 1;
-      setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(int));
+      server_addr.sin_family = AF_INET;
+      server_addr.sin_port = htons(port);
+      server_addr.sin_addr.s_addr = inet_addr(ipaddr.c_str());
 
-      /* status を強制的に INIT_SOCKET に変更 */
-      status = INIT_SOCKET;
+      status |= tcp_status::INIT_AS_CLIENT;
+      status |= tcp_status::OPEN_SOCKET;
     }
-
-    /** @brief socket が開いていたら閉じる */
-    void
-    close_socket()
-    {
-      /* INIT_SOCKET フラグで sockfd の状態を調べる */
-      if ((status & INIT_SOCKET) != 0) close(sockfd);
-      /* status を強制的に初期状態に変更 */
-      status = INITIALIZED;
-    }
-
   };
 
 }

@@ -28,6 +28,8 @@ main(int argc, char **argv)
     printf("\n");
   }
 
+  cli.close();
+
   printf("total %lu bytes sent.\n", wsum);
   printf("total %lu bytes read.\n", rsum);
   return 0;

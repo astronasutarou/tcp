@@ -20,6 +20,7 @@ main(int argc, char **argv)
       printf("%ld bytes read.\n", n);
       printf("%ld bytes sent back.\n", n);
     }
+    obj.close();
     printf("total %ld bytes read.\n", sum);
   }
 
