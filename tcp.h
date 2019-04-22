@@ -317,7 +317,7 @@ namespace tcp
     init_server()
     {
       close_serverfd();
-      serverfd = socket(AF_INET, SOCK_STREAM, 0);
+      serverfd = socket(AF_INET, SOCK_STREAM|SOCK_CLOEXEC, 0);
       if (serverfd < 0) {
         fprintf(stderr, "error: socket: %d\n", serverfd);
         perror("socket");
@@ -408,7 +408,7 @@ namespace tcp
       const int32_t one = 1;
       setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(int32_t));
 
-      sockfd = socket(AF_INET, SOCK_STREAM, 0);
+      sockfd = socket(AF_INET, SOCK_STREAM|SOCK_CLOEXEC, 0);
       if (sockfd < 0) {
         fprintf(stderr, "error: socket: %d\n", sockfd);
         perror("socket");
